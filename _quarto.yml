@@ -11,10 +11,10 @@ execute:
 editor: source
 
 website:
-  title: "Delphi Notebooks"
+  title: "Rapid SCAN (Tentative)"
   navbar:
     pinned: false
-    title: "<i class='bi bi-journal-text'></i> Delphi Notebooks"
+    title: "<i class='bi bi-journal-text'></i> Rapid SCAN (Tentative)"
     right:
       - text: Indicators
         menu:
@@ -28,8 +28,11 @@ website:
         menu:
           - text: "State: COVID-19 Hospital Admissions"
             href: revision_analysis/revision_hospital_admissions_smoothed_covid19_from_claims_api_state.html
+      - text: ETL Comparison
+        menu:
+          - text: "HRR: Old vs New Pipeline Claims (DV)"
+            href: dataset_comparison/dataset_comparison_dv.html
       - icon: github
-        href: https://github.com/cmu-delphi/analysis-notebooks
 
 format:
   html:

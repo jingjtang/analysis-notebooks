@@ -1,9 +1,9 @@
 ---
-title: "Delphi Analysis Notebooks"
+title: "Rapid SCAN (Tentative Name)"
 toc: false
 ---
 
-This repository hosts a collection of notebooks and reports for epidemiological analysis.
+This repository (tentatively called Rapid SCAN, where SCAN stands for Surveillance Comparison and iNformation) hosts a collection of notebooks and reports for epidemiological analysis.
 
 ## Indicator Evaluation
 - [HHS vs. Doctor Visits (State)](indicator_analysis/eval_hhs_vs_doctor_visits_api_state.html)
