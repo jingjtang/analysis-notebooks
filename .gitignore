@@ -14,8 +14,11 @@ _site
 # RStudio files
 .Rproj.user/
 
-# knitr and R markdown default cache directories
+# knitr and R markdown default cache and files directories
 *_cache/
+**/*_cache/
+*_files/
+**/*_files/
 /cache/
 
 # Temporary files created by R markdown
@@ -36,6 +39,8 @@ _site
 # indicator_analysis
 indicator_analysis/indicator_evaluation_cache/
 indicator_analysis/indicator_evaluation_files/
+indicator_analysis/indicator_comparison_cache/
+indicator_analysis/indicator_comparison_files/
 indicator_analysis/data/
 indicator_analysis/epidatr_cache/
 
