@@ -14,7 +14,7 @@ get_output_name <- function(params, suffix = "") {
     params$candidate_source,
     suffix
   )
-  stringr::str_replace_all(name, "[:space:]|[-]", "_")
+  stringr::str_replace_all(name, "[[:space:]-]", "_")
 }
 
 # Default API (State level)
@@ -180,4 +180,23 @@ quarto::quarto_render(
   input = qmd_path,
   output_file = get_output_name(params_api_county, "_api_county"),
   execute_params = params_api_county
+)
+
+# New cast-API source (NSSP via epidata)
+params_api_nssp <- list(
+  guiding_source = "beta_pophive",
+  guiding_indicator = "epic_pct_covid_total",
+  guiding_name = "PopHive: Epic % COVID Total",
+  candidate_source = "nssp",
+  candidate_indicator = "smoothed_pct_ed_visits_covid",
+  candidate_name = "NSSP: Smoothed % ED Visits COVID",
+  geo_type = "state",
+  time_type = "week",
+  start_day = "2023-01-01",
+  end_day = "2024-01-01"
+)
+quarto::quarto_render(
+  input = qmd_path,
+  output_file = get_output_name(params_api_nssp, "_api_nssp"),
+  execute_params = params_api_nssp
 )

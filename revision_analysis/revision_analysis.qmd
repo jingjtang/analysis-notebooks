@@ -17,7 +17,7 @@ params:
   signal_name: 
   # Optional path to a local CSV or Parquet directory with a version/issue column.
   # When NULL, the signal is fetched from the Delphi API with issues = "*".
-  input: !expr "NULL"
+  input_dir: !expr "NULL"
   # Shared settings
   geo_type:  
   time_type: 
@@ -26,8 +26,6 @@ params:
   # Maximum locations shown in faceted plots / summary tables.
   max_locations_plot: 6
   max_locations_table: 15
-  # "Quick revision" threshold in days (used in revision_analysis() print).
-  quick_revision: 7
   # Number of worst-behaving locations to highlight.
   n_worst: 18
   # Convergence threshold: how close (relative) a version must be to the
@@ -53,7 +51,6 @@ execute:
 #| label: setup
 #| include: false
 #| cache: false
-
 # When running interactively, fall back to the parameter defaults.
 if (!exists("params")) {
     params <- list(
@@ -67,7 +64,6 @@ if (!exists("params")) {
         end_day               = "2023-02-01",
         max_locations_plot    = 6,
         max_locations_table   = 15,
-        quick_revision        = 7,
         n_worst               = 18,
         convergence_threshold = 0.05
     )
@@ -178,7 +174,6 @@ as an `epi_archive`. The central question is:
 ```{r}
 #| label: print-config
 #| echo: false
-
 config_tbl <- tibble(
     Field = c("Source", "Signal", "Label", "Geography", "Period"),
     Value = c(
@@ -204,14 +199,13 @@ DT::datatable(
 #| label: load-archive
 #| results: asis
 #| message: true
-
 archive <- NULL
 
-if (!is.null(params$input)) {
-    path <- here::here(params$input)
+if (!is.null(params$input_dir)) {
+    path <- here::here(params$input_dir)
 
     if (fs::is_dir(path)) {
-        cli::cli_inform("Reading data from directory: {.path {params$input}}")
+        cli::cli_inform("Reading data from directory: {.path {params$input_dir}}")
         raw <- arrow::open_dataset(path) %>%
             select(any_of(c("geo_value", "time_value", "version", "issue", "value"))) %>%
             filter(
@@ -220,10 +214,10 @@ if (!is.null(params$input)) {
             ) %>%
             collect()
     } else if (grepl("\\.parquet$", path)) {
-        cli::cli_inform("Reading Parquet file: {.path {params$input}}")
+        cli::cli_inform("Reading Parquet file: {.path {params$input_dir}}")
         raw <- arrow::read_parquet(path)
     } else {
-        cli::cli_inform("Reading CSV file: {.path {params$input}}")
+        cli::cli_inform("Reading CSV file: {.path {params$input_dir}}")
         raw <- read_csv(path)
     }
 
@@ -257,17 +251,50 @@ if (!is.null(params$input)) {
 
     msg_verb <- "Loaded"
 } else {
-    df_raw <- pub_covidcast(
-        source = params$source,
-        signal = params$signal,
-        geo_type = params$geo_type,
-        time_type = params$time_type,
-        time_values = epirange(params$start_day, params$end_day),
-        issues = "*"
-    )
-    # write_csv(df_raw, here::here(params$input))
+    new_api_sources <- c("nssp", "nhsn", "pophive", "nwss", "claims_data_outpatient")
+    use_new_api <- FALSE
 
-    if (nrow(df_raw) == 0 || !"issue" %in% colnames(df_raw)) {
+    if (params$source %in% new_api_sources) {
+        meta_available <- tryCatch(
+            {
+                meta_res <- epidata_meta(params$source)
+                params$signal %in% meta_res[[params$source]]$signals
+            },
+            error = function(e) {
+                FALSE
+            }
+        )
+        if (meta_available) {
+            use_new_api <- TRUE
+        }
+    }
+
+    if (use_new_api) {
+        df_raw <- epidata_archive(
+            source = params$source,
+            signals = params$signal,
+            geo_type = params$geo_type
+        ) %>%
+            filter(
+                time_value >= as.Date(params$start_day),
+                time_value <= as.Date(params$end_day)
+            )
+    } else {
+        df_raw <- pub_covidcast(
+            source = params$source,
+            signal = params$signal,
+            geo_type = params$geo_type,
+            time_type = params$time_type,
+            time_values = epirange(params$start_day, params$end_day),
+            issues = "*"
+        )
+    }
+
+    if ("issue" %in% colnames(df_raw) && !"version" %in% colnames(df_raw)) {
+        df_raw <- rename(df_raw, version = issue)
+    }
+
+    if (nrow(df_raw) == 0 || !"version" %in% colnames(df_raw)) {
         cli::cli_abort(
             "No versioned data returned from the API. ",
             "The signal may not support revision history."
@@ -275,7 +302,6 @@ if (!is.null(params$input)) {
     }
 
     archive <- df_raw %>%
-        rename(version = issue) %>%
         select(geo_value, time_value, version, value) %>%
         as_epi_archive()
 
@@ -300,7 +326,6 @@ invisible(gc())
 #| label: quarto-metadata
 #| results: asis
 #| echo: false
-
 # Dynamically set Quarto metadata so we can use it in ::: {.content-visible}
 # blocks later.
 n_years <- n_distinct(year(archive$DT$time_value))
@@ -314,7 +339,6 @@ cat(sprintf(
 ```{r}
 #| label: archive-meta
 #| include: false
-
 archive_span <- as.numeric(version_end - version_start, units = "days")
 has_history <- archive_span >= 60
 all_geos <- sort(unique(archive$DT$geo_value))
@@ -324,7 +348,6 @@ all_geos <- sort(unique(archive$DT$geo_value))
 #| label: archive-guard-message
 #| echo: false
 #| results: asis
-
 if (!has_history) {
     cat(sprintf(
         "> **Warning**: only %d days of version history are available ",
@@ -343,19 +366,61 @@ if (!has_history) {
 
 ---
 
+## Revision count overview {#revision-count}
+
+The plot below shows how many revisions were published for each time value, with the distribution across locations shown as a boxplot.
+
+```{r}
+#| label: revision-count-plot
+#| echo: false
+#| fig-height: 4.5
+rev_count_df <- archive$DT %>%
+    group_by(geo_value, time_value) %>%
+    summarize(n_revisions = n_distinct(version) - 1L, .groups = "drop")
+
+rev_count_df %>%
+    ggplot(aes(x = time_value, y = n_revisions)) +
+    stat_summary(
+        aes(fill = "IQR"),
+        fun.data = median_hilow, fun.args = list(conf.int = 0.5),
+        geom = "ribbon", alpha = 0.2, color = NA
+    ) +
+    stat_summary(aes(color = "Median"), fun = median, geom = "line") +
+    scale_color_manual(values = c("Median" = "steelblue4")) +
+    scale_fill_manual(values = c("IQR" = "steelblue")) +
+    scale_x_date(breaks = breaks_pretty()) +
+    scale_y_continuous(breaks = breaks_pretty()) +
+    labs(
+        title = "Number of revisions per time value",
+        x = "Time value (aggregated)",
+        y = "Number of revisions",
+        color = NULL,
+        fill = NULL
+    )
+```
+
+---
+
 ## Overall revision summary {#overall}
 
 [`revision_analysis()`](https://cmu-delphi.github.io/epiprocess/reference/revision_analysis.html) provides a concise summary of how a signal matures. The results describe the **spread of revisions**, which measures the difference between the minimum and maximum values ever published for an observation. Scaling this by the signal's value gives the **relative spread**. This shows the magnitude of revisions as a percentage. The report also presents **convergence** through the time it takes for data to reach within 20% of its final value. This convergence metric identifies the median duration before an observation enters and stays in its final neighborhood.
 
 ```{r}
 #| label: revision-analysis
-
 rev_result <- epiprocess::revision_analysis(
     archive,
     value,
-    min_waiting_period = NULL
+    min_waiting_period = 0
 )
 rev_beh <- rev_result$revision_behavior
+
+# Track which (geo_value, time_value) pairs were included vs. excluded.
+# revision_analysis() drops pairs that have no version past the waiting
+# period — typically the most recent time values with only an initial report.
+all_pairs <- archive$DT %>% distinct(geo_value, time_value)
+analyzed_pairs <- rev_beh %>% distinct(geo_value, time_value)
+n_excluded <- nrow(anti_join(all_pairs, analyzed_pairs, by = c("geo_value", "time_value")))
+n_analyzed <- nrow(analyzed_pairs)
 
 # Global metrics for follow-on plots/narrative
 max_lag_days <- as_days(rev_beh$max_lag)
@@ -366,10 +431,10 @@ invisible(gc())
 
 ```{r}
 #| label: convergence-compute
-
 # Pre-calculate relative differences to final for all observations.
 # We also find the first release version for age calculation.
 convergence_df <- archive$DT %>%
+    semi_join(analyzed_pairs, by = c("geo_value", "time_value")) %>%
     group_by(geo_value, time_value) %>%
     mutate(
         version_first = min(version, na.rm = TRUE),
@@ -386,10 +451,54 @@ invisible(gc())
 
 ```{r}
 #| label: revision-analysis-print
-#| message: true
+#| echo: false
+#| results: asis
+quick_threshold <- 7
+few_threshold <- 3
+rel_spread_thr <- 0.1
+abs_spread_thr <- 0.05 * rev_result$max_val
 
-rev_result %>%
-    print(quick_revision = params$quick_revision)
+total_obs        <- nrow(rev_beh)
+no_rev_pct       <- mean(rev_beh$n_revisions == 0, na.rm = TRUE)
+quick_rev_pct    <- mean(as_days(rev_beh$max_lag) <= quick_threshold, na.rm = TRUE)
+few_rev_pct      <- mean(rev_beh$n_revisions <= few_threshold, na.rm = TRUE)
+
+revised_beh      <- rev_beh %>% filter(n_revisions > 0)
+low_rel_spread   <- mean(revised_beh$rel_spread < rel_spread_thr, na.rm = TRUE)
+high_abs_spread  <- mean(revised_beh$spread > abs_spread_thr, na.rm = TRUE)
+
+lag_stats  <- summary(as_days(rev_beh$min_lag))
+conv_stats <- summary(as_days(rev_beh$lag_near_latest))
+fmt_stats  <- function(s) paste(names(s), round(as.numeric(s), 1), sep = ": ", collapse = ", ")
+
+if (n_excluded > 0) {
+    cat(sprintf(
+        "::: {.callout-important}\n`revision_analysis()` requires at least one version past the waiting period to assess revision behavior. %d time×location pair(s) were excluded because they only have an initial report with no subsequent versions yet. The %d remaining pairs are used for all analyses below.\n:::\n\n",
+        n_excluded, n_analyzed
+    ))
+}
+cat(sprintf(
+    "- **Time range**: %s to %s\n",
+    rev_result$range_time_values[1], rev_result$range_time_values[2]
+))
+cat(sprintf("- **Min lag (days to first version)**: %s\n", fmt_stats(lag_stats)))
+cat(sprintf("- **No revisions**: %s\n", label_percent()(no_rev_pct)))
+cat(sprintf("- **Quick revisions (≤ %d days)**: %s\n", quick_threshold, label_percent()(quick_rev_pct)))
+cat(sprintf("- **Few revisions (≤ %d)**: %s\n", few_threshold, label_percent()(few_rev_pct)))
+if (nrow(revised_beh) > 0) {
+    cat(sprintf(
+        "- **Minor relative revisions (< %.1f)**: %s\n",
+        rel_spread_thr, label_percent()(low_rel_spread)
+    ))
+    cat(sprintf(
+        "- **Major absolute revisions (> %.3f)**: %s\n",
+        abs_spread_thr, label_percent()(high_abs_spread)
+    ))
+}
+cat(sprintf(
+    "- **Days until within %d%% of latest**: %s\n\n",
+    rev_result$within_latest * 100, fmt_stats(conv_stats)
+))
 ```
 
 
@@ -409,7 +518,6 @@ Here we collect a number of statistics for each location. This includes:
 ```{r}
 #| label: location-stats-compute
 #| include: false
-
 location_stats <- rev_beh %>%
     group_by(geo_value) %>%
     summarize(
@@ -434,7 +542,6 @@ lowest_loc <- sorted_conv$geo_value[nrow(sorted_conv)]
 #| label: location-stats-table
 #| echo: false
 #| eval: !expr n_locations > 1
-
 DT::datatable(
     location_stats,
     colnames = c(
@@ -466,7 +573,6 @@ DT::datatable(
 ```{r}
 #| label: pipeline-issue-cadence
 #| fig-height: 3.5
-
 issue_dates <- sort(unique(archive$DT$version))
 gaps <- as.numeric(diff(issue_dates), units = "days")
 
@@ -491,7 +597,6 @@ spread at a single `time_value` indicates back-revision.
 
 ```{r}
 #| label: backfill-gap-compute
-
 backfill_df <- archive$DT %>%
     filter(!is.na(value)) %>%
     group_by(geo_value, time_value) %>%
@@ -505,7 +610,6 @@ backfill_df <- archive$DT %>%
 ```{r}
 #| label: backfill-gap-geography
 #| fig-height: 8
-
 # Identify worst locations for deeper drill-down
 worst_geos <- location_stats %>%
     arrange(desc(rel_spread)) %>%
@@ -541,7 +645,6 @@ Each coloured line represents a different issue date. Vertical spread at a singl
 
 ```{r}
 #| label: pipeline-fan-plot
-
 min_v <- min(issue_dates)
 max_v <- max(issue_dates)
 
@@ -578,7 +681,6 @@ This section assesses how long it takes for a signal to stabilize. We consider b
 
 ```{r}
 #| label: stability-compute
-
 # Define thresholds for assessment (relative differences)
 thresholds <- c(0.5, 0.2, 0.1, 0.05, 0.02)
 
@@ -626,7 +728,6 @@ How long does it typically take to reach each stability threshold?
 ```{r}
 #| label: stability-histograms
 #| fig-height: 7
-
 ggplot(stability_combined, aes(x = lag_stable, fill = threshold)) +
     geom_histogram(bins = 40, color = "white") +
     facet_wrap(~threshold, ncol = 1, scales = "free_y") +
@@ -647,7 +748,6 @@ By day X, what fraction of observations have settled within the specified thresh
 ```{r}
 #| label: revision-duration-ecdf-multi
 #| fig-height: 5
-
 ggplot(stability_combined, aes(x = lag_stable, color = threshold)) +
     stat_ecdf(linewidth = 0.8) +
     scale_x_continuous(breaks = breaks_pretty()) +
@@ -666,7 +766,6 @@ ggplot(stability_combined, aes(x = lag_stable, color = threshold)) +
 ```{r}
 #| label: stability-summary-table
 #| echo: false
-
 stability_combined %>%
     group_by(threshold) %>%
     summarize(
@@ -700,7 +799,6 @@ The plot below shows how the speed of data stabilization changes over time. By g
 ```{r}
 #| label: diagnostic-censoring
 #| fig-height: 4.5
-
 max_v <- max(archive$DT$version)
 
 # Determine best aggregation unit based on date range
@@ -759,7 +857,6 @@ This section examines if the relative scale of revisions is influenced by the ma
 ```{r}
 #| label: diagnostic-magnitude
 #| fig-height: 4.5
-
 rev_beh %>%
     filter(rel_spread > 0) %>%
     ggplot(aes(x = max_value, y = rel_spread)) +
@@ -791,7 +888,6 @@ a positive value means it was above (over-reporting).
 
 ```{r}
 #| label: bias-compute
-
 # For each (geo_value, time_value) we need the *first* and *latest* value.
 # revision_behavior already carries `spread` (max - min) and `rel_spread`.
 # We reconstruct initial vs. latest from the raw archive DT.
@@ -828,7 +924,6 @@ bias_by_loc <- bias_df %>%
 ```{r}
 #| label: bias-overview-plot
 #| fig-height: 5
-
 bias_df %>%
     left_join(bias_by_loc %>% select(geo_value, median_bias), by = "geo_value") %>%
     mutate(
@@ -860,7 +955,6 @@ The table below provides a detailed breakdown of these maturation patterns for e
 ```{r}
 #| label: bias-table
 #| echo: false
-
 DT::datatable(
     bias_by_loc,
     colnames = c(
@@ -887,7 +981,6 @@ While the previous section focused on the first release, this analysis pools eve
 
 ```{r}
 #| label: total-bias-compute
-
 total_bias_df <- archive$DT %>%
     inner_join(latest_vals, by = c("geo_value", "time_value")) %>%
     filter(value_latest != 0, !is.na(value_latest)) %>%
@@ -906,7 +999,6 @@ total_bias_by_loc <- total_bias_df %>%
 ```{r}
 #| label: total-bias-plot
 #| fig-height: 5
-
 total_bias_df %>%
     left_join(total_bias_by_loc %>% select(geo_value, median_bias), by = "geo_value") %>%
     mutate(
@@ -946,7 +1038,6 @@ While the overall signal may stabilize within a consistent timeframe, reporting 
 
 ```{r}
 #| label: rev-beh-by-loc-compute
-
 # Re-sort locations by their median stabilization lag at the tightest threshold (5%)
 geo_sorting <- stability_combined %>%
     filter(threshold == "5%") %>%
@@ -976,7 +1067,6 @@ rev_by_loc <- rev_beh %>%
 #| label: rev-by-location-maturation
 #| fig-height: 5
 #| eval: !expr n_locations > 3
-
 # Plot maturation stages across all thresholds defined in Section 5.1
 stability_combined %>%
     mutate(
@@ -1013,7 +1103,6 @@ To understand how quickly the data stabilizes, we measure its distance to the fi
 ```{r}
 #| label: convergence-overall-plot
 #| fig-height: 6
-
 overall_conv <- convergence_df %>%
     group_by(days_since_first) %>%
     summarize(
@@ -1050,7 +1139,6 @@ p1 / p2 + plot_layout(heights = c(3, 1))
 ```{r}
 #| label: convergence-location-plot
 #| fig-height: 8
-
 # Identify worst locations by relative spread
 n_worst <- params$n_worst %||% 12
 worst_geos <- location_stats %>%
@@ -1098,7 +1186,6 @@ ggplot(worst_geom_conv, aes(x = days_since_first)) +
 #| label: final-summary-narrative
 #| echo: false
 #| results: asis
-
 # Statistical context for the narrative
 final_rev_data <- stability_combined %>% filter(threshold == "Final revision")
 med_window <- round(median(final_rev_data$lag_stable, na.rm = TRUE))
@@ -1142,6 +1229,4 @@ cat(paste0(
     collapse = " | "
 ))
 cat(".\n\n")
-
-
 ```

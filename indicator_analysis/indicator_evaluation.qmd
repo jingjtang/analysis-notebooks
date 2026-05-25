@@ -233,7 +233,6 @@ DT::datatable(config_tbl, caption = sprintf(
 ```{r}
 #| label: load-guiding
 #| results: asis
-
 # Load guiding indicator
 if (!is.null(params$guiding_csv)) {
     df_guiding <- read.csv(params$guiding_csv) %>%
@@ -241,12 +240,40 @@ if (!is.null(params$guiding_csv)) {
         filter(time_value >= as.Date(params$start_day) & time_value <= as.Date(params$end_day)) %>%
         as_epi_df()
 } else {
-    df_guiding <- pub_covidcast(
-        params$guiding_source, params$guiding_indicator,
-        params$geo_type, params$time_type,
-        time_values = time_range(params$start_day, params$end_day),
-        as_of = Sys.Date()
-    ) %>% as_epi_df()
+    # Determine if new API can be used for guiding source
+    new_api_sources <- c("nssp", "nhsn", "pophive", "nwss", "claims_data_outpatient")
+    use_new_api <- FALSE
+    if (params$guiding_source %in% new_api_sources) {
+        meta_available <- tryCatch(
+            {
+                meta_res <- epidata_meta(params$guiding_source)
+                params$guiding_indicator %in% meta_res[[params$guiding_source]]$signals
+            },
+            error = function(e) FALSE
+        )
+        if (meta_available) use_new_api <- TRUE
+    }
+    if (use_new_api) {
+        df_guiding <- epidata_snapshot(
+            source = params$guiding_source,
+            signals = params$guiding_indicator,
+            geo_type = params$geo_type
+        ) %>%
+            filter(
+                time_value >= as.Date(params$start_day),
+                time_value <= as.Date(params$end_day)
+            ) %>%
+            rename(any_of(c(time_value = "reference_time"))) %>%
+            select(geo_value, time_value, value) %>%
+            as_epi_df()
+    } else {
+        df_guiding <- pub_covidcast(
+            params$guiding_source, params$guiding_indicator,
+            params$geo_type, params$time_type,
+            time_values = time_range(params$start_day, params$end_day),
+            as_of = Sys.Date()
+        ) %>% as_epi_df()
+    }
 }
 
 cat(sprintf(
@@ -258,7 +285,6 @@ cat(sprintf(
 ```{r}
 #| label: load-candidate
 #| results: asis
-
 # Load candidate indicator
 candidate_archive <- NULL
 if (!is.null(params$candidate_csv)) {
@@ -286,12 +312,40 @@ if (!is.null(params$candidate_csv)) {
         df_candidate <- df_candidate_raw %>% as_epi_df()
     }
 } else {
-    df_candidate <- pub_covidcast(
-        params$candidate_source, params$candidate_indicator,
-        params$geo_type, params$time_type,
-        time_values = time_range(params$start_day, params$end_day),
-        as_of = Sys.Date()
-    ) %>% as_epi_df()
+    # Determine if new API can be used for candidate source
+    new_api_sources <- c("nssp", "nhsn", "pophive", "nwss", "claims_data_outpatient")
+    use_new_api <- FALSE
+    if (params$candidate_source %in% new_api_sources) {
+        meta_available <- tryCatch(
+            {
+                meta_res <- epidata_meta(params$candidate_source)
+                params$candidate_indicator %in% meta_res[[params$candidate_source]]$signals
+            },
+            error = function(e) FALSE
+        )
+        if (meta_available) use_new_api <- TRUE
+    }
+    if (use_new_api) {
+        df_candidate <- epidata_snapshot(
+            source = params$candidate_source,
+            signals = params$candidate_indicator,
+            geo_type = params$geo_type
+        ) %>%
+            filter(
+                time_value >= as.Date(params$start_day),
+                time_value <= as.Date(params$end_day)
+            ) %>%
+            rename(any_of(c(time_value = "reference_time"))) %>%
+            select(geo_value, time_value, value) %>%
+            as_epi_df()
+    } else {
+        df_candidate <- pub_covidcast(
+            params$candidate_source, params$candidate_indicator,
+            params$geo_type, params$time_type,
+            time_values = time_range(params$start_day, params$end_day),
+            as_of = Sys.Date()
+        ) %>% as_epi_df()
+    }
 }
 
 cat(sprintf(
@@ -303,7 +357,6 @@ cat(sprintf(
 ```{r}
 #| label: load-candidate-archive
 #| results: asis
-
 # Fetch revision history from API if not already built from CSV
 if (is.null(candidate_archive) && is.null(params$candidate_csv)) {
     all_geos <- unique(df_candidate$geo_value)
@@ -330,23 +383,54 @@ if (is.null(candidate_archive) && is.null(params$candidate_csv)) {
 
     # Request only for the sampled locations and the relevant time range
     # to avoid server-side timeouts/errors on large indicators.
-    df_archive_raw <- pub_covidcast(
-        source = params$candidate_source,
-        signal = params$candidate_indicator,
-        geo_type = params$geo_type,
-        time_type = params$time_type,
-        geo_values = archive_geos,
-        time_values = time_range(archive_start, params$end_day),
-        issues = "*",
-    )
+    # Determine if new API can be used for candidate source archive
+    new_api_sources <- c("nssp", "nhsn", "pophive", "nwss", "claims_data_outpatient")
+    use_new_api <- FALSE
+    if (params$candidate_source %in% new_api_sources) {
+        meta_available <- tryCatch(
+            {
+                meta_res <- epidata_meta(params$candidate_source)
+                params$candidate_indicator %in% meta_res[[params$candidate_source]]$signals
+            },
+            error = function(e) FALSE
+        )
+        if (meta_available) use_new_api <- TRUE
+    }
+    if (use_new_api) {
+        df_archive_raw <- epidata_archive(
+            source = params$candidate_source,
+            signals = params$candidate_indicator,
+            geo_type = params$geo_type
+        ) %>%
+            filter(
+                geo_value %in% archive_geos,
+                time_value >= as.Date(archive_start),
+                time_value <= as.Date(params$end_day)
+            )
+    } else {
+        df_archive_raw <- pub_covidcast(
+            source = params$candidate_source,
+            signal = params$candidate_indicator,
+            geo_type = params$geo_type,
+            time_type = params$time_type,
+            geo_values = archive_geos,
+            time_values = time_range(archive_start, params$end_day),
+            issues = "*",
+        )
+    }
 
-    if (nrow(df_archive_raw) > 0 && "issue" %in% colnames(df_archive_raw)) {
-        archive_info$version_start <- min(df_archive_raw$issue)
-        archive_info$version_end <- max(df_archive_raw$issue)
-        candidate_archive <- df_archive_raw %>%
-            rename(version = issue) %>%
-            select(geo_value, time_value, version, value) %>%
-            as_epi_archive()
+    if (nrow(df_archive_raw) > 0) {
+        df_archive_raw <- df_archive_raw %>%
+            rename(any_of(c(time_value = "reference_time", version = "issue"))) %>%
+            rename(any_of(c(version = "report_time"))) %>%
+            select(geo_value, time_value, version, value)
+
+        if ("version" %in% colnames(df_archive_raw)) {
+            archive_info$version_start <- min(df_archive_raw$version)
+            archive_info$version_end <- max(df_archive_raw$version)
+            candidate_archive <- df_archive_raw %>%
+                as_epi_archive()
+        }
     }
 }
 ```
@@ -354,7 +438,6 @@ if (is.null(candidate_archive) && is.null(params$candidate_csv)) {
 ```{r}
 #| label: combine-data
 #| results: asis
-
 # Infer time type from guiding
 env_time_type <- attributes(df_guiding)$metadata$time_type
 if (is.null(env_time_type) || length(env_time_type) != 1 || is.na(env_time_type) || !is.character(env_time_type)) {
@@ -448,14 +531,12 @@ lags_sweep <- switch(env_time_type %||% "unknown",
     year = -2:2,
     -21:21 # default
 )
-
 ```
 
 ```{r}
 #| label: quarto-metadata
 #| results: asis
 #| echo: false
-
 # Dynamically set Quarto metadata so we can use it in ::: {.content-visible}
 # blocks later.
 cat(sprintf(
@@ -525,7 +606,6 @@ ggplot(df_long %>% filter(indicator == params$candidate_name), aes(x = time_valu
         x = "Date", y = "Value", color = "Indicator"
     ) +
     theme(legend.position = "none")
-
 ```
 
 In this normalized view, overlapping patterns, lead-lag relationships, or divergent behavior become easier to spot. For instance, if the candidate curve tends to rise before the guiding curve, we might have a useful leading relationship.
@@ -533,7 +613,6 @@ In this normalized view, overlapping patterns, lead-lag relationships, or diverg
 ```{r}
 #| label: eda-overview-normalized
 #| fig-height: 8
-
 ggplot(df_long, aes(x = time_value, y = value_norm, color = indicator)) +
     geom_line(linewidth = 0.7, alpha = 0.3) +
     geom_point(size = eda_point_size, alpha = 0.4) +
@@ -558,7 +637,6 @@ By observing the width of these ribbons, you can get a sense of geographic varia
 #| label: eda-quantiles
 #| fig-height: 8
 #| eval: !expr n_inter_locations > 1
-
 cat("\n")
 
 df_quantiles_wide <- df_inter %>%
@@ -630,7 +708,6 @@ While the quantile plots summarize the main body of the distribution, they may h
 #| echo: false
 #| results: asis
 #| eval: !expr n_inter_locations > 1
-
 # Calculate daily 95th percentiles directly from the data
 daily_p95 <- df_inter %>%
     group_by(time_value) %>%
@@ -702,7 +779,6 @@ cat(sprintf(
 ```{r}
 #| label: eda-coverage-plot
 #| echo: true
-
 ggplot(coverage, aes(x = time_value)) +
     geom_area(
         aes(
@@ -881,7 +957,6 @@ $$\text{CV}_i = \frac{\text{SD}(X_i)}{|\bar{X}_i|}$$
 #| label: eda-noise
 #| fig-height: 8
 #| eval: !expr n_inter_locations > 1
-
 # Calculate CV per location using the intersected data
 noise_stats <- df_inter %>%
     arrange(geo_value, time_value) %>%
@@ -968,7 +1043,7 @@ p_hist / p_scatter + plot_layout(heights = c(1.2, 1))
 ```{r}
 #| label: revision-analysis-setup
 #| echo: false
-
+#| dependson: "load-candidate-archive"
 # Get versioned data
 archive <- NULL
 archive_has_history <- FALSE
@@ -1074,7 +1149,6 @@ if (is.null(archive)) {
 #| echo: false
 #| results: asis
 #| eval: !expr (archive_has_history && n_inter_locations > 1)
-
 cat(sprintf("The time series below visualize the candidate indicator (%s) with line colors corresponding to the issue date, meaning the date the data was initially published or subsequently revised. Darker colors denote older versions, while lighter colors represent more recent updates.\n\n", params$candidate_name))
 cat("If the lines perfectly overlap, it means the data for that location is not subject to revisions. Where you see a vertical spread along a single date on the x-axis, the data has been revised over time.\n\n")
 ```
@@ -1085,7 +1159,6 @@ cat("If the lines perfectly overlap, it means the data for that location is not 
 #| results: asis
 #| fig-width: 10
 #| fig-height: 10
-
 rev_by_loc <- rev_details$revision_behavior %>%
     filter(n_revisions != 0) %>%
     group_by(geo_value) %>%
@@ -1161,7 +1234,6 @@ The histogram and table below show the distribution of all observed values and t
 ```{r}
 #| label: sanity-value-range
 #| fig-height: 4
-
 ggplot(df_inter, aes(x = candidate)) +
     geom_histogram(bins = 40, alpha = 0.8, color = "white") +
     scale_x_continuous(labels = label_comma()) +
@@ -1178,7 +1250,6 @@ ggplot(df_inter, aes(x = candidate)) +
 ```{r}
 #| label: sanity-value-range-table
 #| echo: false
-
 range_tbl <- df_inter %>%
     group_by(geo_value) %>%
     summarize(
@@ -1213,7 +1284,6 @@ The plot below shows the seasonal pattern of the indicator, with each panel repr
 #| label: sanity-seasonality
 #| fig-height: 7
 #| eval: !expr as.numeric(difftime(max(df_inter$time_value), min(df_inter$time_value), units = "days")) >= 365
-
 season_month_labels <- c("Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May")
 
 df_seasonal <- df_inter %>%
@@ -1256,7 +1326,6 @@ ggplot(df_seasonal, aes(x = season_month, color = season, fill = season, group =
 #| echo: false
 #| results: asis
 #| eval: !expr params$geo_type == "state"
-
 pacman::p_load(nanoparquet)
 
 crosswalk_path <- here("tests", "test_data", "delphi_geomap", "geomapper_crosswalk_20200101.parquet")
@@ -1401,7 +1470,6 @@ The table below flags locations whose seasonal peak is at least twice the typica
 #| label: sanity-seasonality-anomalies
 #| echo: false
 #| eval: !expr as.numeric(difftime(max(df_inter$time_value), min(df_inter$time_value), units = "days")) >= 365
-
 df_seasonal_loc <- df_inter %>%
     mutate(
         yr           = as.integer(format(time_value, "%Y")),
@@ -1510,7 +1578,6 @@ if (n_inter_locations > 1) {
 #| label: cor-geo-over-time-quant-plot
 #| include: false
 #| eval: !expr (n_inter_locations > 1 && exists("df_quantiles_wide"))
-
 pal_cand <- dis_pal_list[2]
 pal_guid <- dis_pal_list[3]
 
@@ -1556,7 +1623,6 @@ p_quant <- ggplot(mapping = aes(x = time_value)) +
 ```{r}
 #| label: cor-geo-over-time-cor-plot
 #| eval: !expr n_inter_locations > 1
-
 p_cor <- ggplot(cor_by_time, aes(x = time_value)) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
     geom_hline(
@@ -1600,7 +1666,6 @@ p_cor <- ggplot(cor_by_time, aes(x = time_value)) +
 #| label: cor-geo-over-time-cov-plot
 #| include: false
 #| eval: !expr n_inter_locations > 1
-
 p_cov <- ggplot(coverage, aes(x = time_value, y = both_available)) +
     geom_step(color = "gray50", linewidth = 0.5, direction = "mid") +
     scale_x_date(
@@ -1619,7 +1684,6 @@ p_cov <- ggplot(coverage, aes(x = time_value, y = both_available)) +
 #| label: cor-geo-over-time-stacked
 #| fig-height: 10
 #| eval: !expr n_inter_locations > 1
-
 p_cor / p_quant / p_cov + plot_layout(heights = c(1.4, 0.8, 0.8))
 ```
 
@@ -1675,7 +1739,6 @@ cat("This plot expands on the basic correlation by showing multiple smoothed tre
 ```{r}
 #| label: cor-lagged-time
 #| fig-height: 8
-
 cor_lagged_time <- map(lag_values, ~ {
     epi_cor(df_inter, candidate, guiding,
         cor_by = time_value, dt1 = -.x, method = "spearman"
@@ -1715,7 +1778,6 @@ cat(sprintf("Same as above, but the candidate (%s) values are drawn from `epix_a
 #| label: cor-lagged-realtime
 #| fig-height: 8
 #| eval: !expr (archive_has_history && n_inter_locations > 1)
-
 versions <- sort(unique(candidate_archive$DT$version))
 
 cor_lagged_realtime <- map_dfr(versions, function(vv) {
@@ -1886,7 +1948,6 @@ if (n_inter_locations > 1 && params$geo_type %in% c("state", "county")) {
 ```{r}
 #| label: cor-choropleth
 #| fig-height: 6
-
 cor_optimal <- epi_cor(df_inter, candidate, guiding,
     cor_by = geo_value, dt1 = -optimal_lag,
     method = "spearman"
