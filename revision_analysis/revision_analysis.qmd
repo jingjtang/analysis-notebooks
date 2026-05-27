@@ -275,6 +275,7 @@ if (!is.null(params$input_dir)) {
             signals = params$signal,
             geo_type = params$geo_type
         ) %>%
+            rename(any_of(c(time_value = "reference_time", version = "report_time"))) %>%
             filter(
                 time_value >= as.Date(params$start_day),
                 time_value <= as.Date(params$end_day)
