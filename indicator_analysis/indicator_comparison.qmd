@@ -41,7 +41,7 @@ knitr:
 editor_options: 
   chunk_output_type: console
 execute:
-  cache: true
+  cache: false
 ---
 
 ```{r}
@@ -75,8 +75,23 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
     epidatr, epiprocess,
     tidyverse, scales, patchwork,
-    here, glue
+    here, glue, ggtext
 )
+# Custom HTML-friendly label wrapper for ggtext::element_markdown
+label_wrap_html <- function(width = 25) {
+  fun <- label_wrap_gen(width = width)
+  function(labels) {
+    res <- fun(labels)
+    res[] <- lapply(res, function(x) {
+      if (is.character(x) || is.factor(x)) {
+        gsub("\n", "<br>", as.character(x), fixed = TRUE)
+      } else {
+        x
+      }
+    })
+    res
+  }
+}
 
 # Invalidate knitr cache when params change
 knitr::opts_chunk$set(cache.extra = list(params))
@@ -102,12 +117,15 @@ dis_pal_list <- colours[c(3, 5, 7, 10, 11, 9)]
 theme_set(
     theme_minimal(base_family = "Lato", base_size = 12) +
         theme(
-            plot.title = element_text(hjust = 0.5, size = 15, face = "bold"),
-            plot.subtitle = element_text(hjust = 0.5, color = "gray50"),
-            plot.caption = element_text(hjust = 0, color = "gray50"),
+            plot.title = ggtext::element_markdown(hjust = 0.5, size = 15, face = "bold", margin = margin(b = 6)),
+            plot.subtitle = element_text(hjust = 0.5, color = "gray50", margin = margin(b = 10)),
+            plot.caption = ggtext::element_markdown(hjust = 0, color = "gray50", margin = margin(t = 10)),
             panel.grid = element_line(linetype = 2, linewidth = 0.3, color = "gray90"),
             panel.grid.minor = element_blank(),
             legend.position = "top",
+            legend.text = ggtext::element_markdown(size = 10),
+            legend.title = ggtext::element_markdown(size = 10, face = "bold"),
+            strip.text = ggtext::element_markdown(hjust = 0.5, size = 11, face = "bold", margin = margin(t = 6, b = 6)),
             strip.background = element_rect(fill = "gray95", linetype = "blank"),
             panel.border = element_rect(color = "gray95", fill = NA)
         )
@@ -206,11 +224,6 @@ if (!dir.exists(cache_path)) dir.create(cache_path, recursive = TRUE)
 set_cache(cache_dir = cache_path)
 ```
 
-
-
-
-
-
 This notebook evaluates a **candidate indicator** against a **guiding indicator**
 (presumed ground truth) to determine whether the candidate has value for
 nowcasting or forecasting.
@@ -242,7 +255,7 @@ DT::datatable(config_tbl, caption = sprintf(
 
 ```{r}
 #| label: load-guiding
-#| results: asis
+#| output: asis
 # Load guiding indicator
 if (!is.null(params$guiding_csv)) {
     df_guiding <- read.csv(params$guiding_csv) %>%
@@ -306,7 +319,7 @@ cat(sprintf(
 
 ```{r}
 #| label: load-candidate
-#| results: asis
+#| output: asis
 # Load candidate indicator
 candidate_archive <- NULL
 if (!is.null(params$candidate_csv)) {
@@ -390,7 +403,7 @@ cat(sprintf(
 
 ```{r}
 #| label: load-candidate-archive
-#| results: asis
+#| output: asis
 # Fetch revision history from API if not already built from CSV
 if (is.null(candidate_archive) && is.null(params$candidate_csv)) {
     all_geos <- unique(df_candidate$geo_value)
@@ -472,7 +485,7 @@ if (is.null(candidate_archive) && is.null(params$candidate_csv)) {
 
 ```{r}
 #| label: combine-data
-#| results: asis
+#| output: asis
 # Infer time type from guiding
 env_time_type <- attributes(df_guiding)$metadata$time_type
 if (is.null(env_time_type) || length(env_time_type) != 1 || is.na(env_time_type) || !is.character(env_time_type)) {
@@ -570,7 +583,7 @@ lags_sweep <- switch(env_time_type %||% "unknown",
 
 ```{r}
 #| label: quarto-metadata
-#| results: asis
+#| output: asis
 #| echo: false
 # Dynamically set Quarto metadata so we can use it in ::: {.content-visible}
 # blocks later.
@@ -614,7 +627,7 @@ df_long <- df_inter %>%
 
 ```{r}
 #| label: eda-overview-callout
-#| results: asis
+#| output: asis
 #| echo: false
 if (n_plot < length(all_geos)) {
     cat(sprintf(
@@ -695,9 +708,9 @@ ggplot(df_quantiles_wide, aes(x = time_value)) +
     geom_ribbon(aes(ymin = `0.05`, ymax = `0.95`, fill = "5%-95%"), alpha = 0.2) +
     geom_ribbon(aes(ymin = `0.25`, ymax = `0.75`, fill = "25%-75%"), alpha = 0.4) +
     geom_line(aes(y = `0.5`, color = "Median"), linewidth = 1) +
-    facet_wrap(~indicator, ncol = 1, scales = "free_y") +
+    facet_wrap(~indicator, ncol = 1, scales = "free_y", labeller = label_wrap_html(width = 25)) +
     scale_x_date(breaks = breaks_pretty(), label = label_date_short()) +
-    scale_y_continuous(labels = scales::label_comma()) +
+    scale_y_continuous(labels = scales::label_number(scale_cut = scales::cut_si(""))) +
     scale_fill_manual(values = c("5%-95%" = dis_pal_list[2], "25%-75%" = dis_pal_list[2])) +
     scale_color_manual(values = c("Median" = dis_pal_list[2])) +
     labs(
@@ -720,7 +733,7 @@ This approach compares locations against one another on each date. If the indica
 ```{r}
 #| label: eda-aberrant-locations
 #| echo: false
-#| results: asis
+#| output: asis
 #| eval: !expr n_inter_locations > 1
 # Calculate daily 95th percentiles directly from the data
 daily_p95 <- df_inter %>%
@@ -772,7 +785,7 @@ This section explores the availability of data across time and space. The step c
 ```{r}
 #| label: eda-coverage
 #| echo: false
-#| results: asis
+#| output: asis
 coverage <- df %>%
     group_by(time_value) %>%
     summarize(
@@ -847,7 +860,7 @@ This table summarizes the available data across all included locations. Location
 
 ```{r}
 #| label: eda-summary
-#| results: asis
+#| output: asis
 #| echo: false
 #| eval: !expr n_inter_locations > 1
 # Compute base stats on the exhaustive geo-time grid
@@ -938,8 +951,9 @@ cat("\n")
 
 ```{r}
 #| label: eda-summary-table
-#| results: asis
+#| output: asis
 #| echo: false
+#| eval: !expr n_inter_locations > 1
 
 summary_tbl <- summary_tbl_all %>%
     filter(
@@ -1035,7 +1049,7 @@ noise_long <- noise_stats_plot %>%
 # Histogram comparison
 p_hist <- ggplot(noise_long, aes(x = value, fill = indicator)) +
     geom_histogram(bins = 30, color = "white", alpha = 0.7, position = "identity") +
-    facet_wrap(~indicator, ncol = 1) +
+    facet_wrap(~indicator, ncol = 1, labeller = label_wrap_html(width = 25)) +
     scale_x_continuous(labels = label_percent()) +
     labs(
         title = "CV Distribution by Location",
@@ -1085,7 +1099,7 @@ if (!is.null(candidate_archive) &&
 
 ```{r}
 #| label: quarto-metadata-archive
-#| results: asis
+#| output: asis
 #| echo: false
 # Dynamically set Quarto metadata so we can use it in ::: {.content-visible}
 # blocks later.
@@ -1099,6 +1113,8 @@ cat(sprintf(
 
 All correlation metrics are computed on the intersection of the candidate and guiding indicators (rows where both values are non-missing) using the latest available revisions unless otherwise indicated.
 
+::: {.content-visible when-meta="multi_location"}
+
 ### Correlation over Time
 
 Here we calculate the Spearman rank correlation between the candidate and guiding indicators across all available locations for each individual date. We also overlay a LOESS smoothed trend line to help capture broader patterns over time.
@@ -1110,6 +1126,7 @@ Two additional panels are included below the correlation plot to support interpr
 
 ```{r}
 #| label: cor-geo-over-time
+#| eval: !expr n_inter_locations > 1
 mean_rho <- NA
 cor_by_time <- epi_cor(df_inter, candidate, guiding,
     cor_by = time_value, method = "spearman"
@@ -1145,7 +1162,7 @@ p_cor <- ggplot(cor_by_time, aes(x = time_value)) +
     ) +
     labs(
         title = "Correlation over time",
-        subtitle = bquote(Spearman ~ rho ~ "across" ~ .(n_inter_locations) ~ "locations | Mean =" ~ .(sprintf("%.3f", mean_rho))),
+        subtitle = bquote("Spearman" ~ rho ~ "across" ~ .(n_inter_locations) ~ "locations | Mean =" ~ .(sprintf("%.3f", mean_rho))),
         x = "Date", y = expression(paste("Spearman ", rho, " across locations"))
     ) +
     theme(
@@ -1158,7 +1175,7 @@ p_cor <- ggplot(cor_by_time, aes(x = time_value)) +
 ```{r}
 #| label: cor-geo-over-time-quant-plot
 #| include: false
-#| eval: !expr (n_inter_locations > 1 && exists("df_quantiles_wide"))
+#| eval: !expr n_inter_locations > 1
 pal_cand <- dis_pal_list[2]
 pal_guid <- dis_pal_list[3]
 
@@ -1245,6 +1262,7 @@ p_cor <- ggplot(cor_by_time, aes(x = time_value)) +
 ```{r}
 #| label: cor-geo-over-time-cov-plot
 #| include: false
+#| eval: !expr n_inter_locations > 1
 p_cov <- ggplot(coverage, aes(x = time_value, y = both_available)) +
     geom_step(color = "gray50", linewidth = 0.5, direction = "mid") +
     scale_x_date(
@@ -1262,24 +1280,18 @@ p_cov <- ggplot(coverage, aes(x = time_value, y = both_available)) +
 ```{r}
 #| label: cor-geo-over-time-stacked
 #| fig-height: 8
+#| eval: !expr n_inter_locations > 1
 p_cor / p_quant / p_cov + plot_layout(heights = c(1.2, 0.4, 0.4))
 ```
 
-::: {.content-visible when-meta="multi_location"}
+:::
 
 ### Distribution of Temporal Correlations
 
 This histogram shows the distribution of the Spearman correlation computed within each geographic location over the full time period. The dashed line marks the median.
 
-### Temporal Correlation
-
-Here we calculate the Spearman rank correlation over time between the candidate and guiding indicators for the single available location.
-
-:::
-
 ```{r}
 #| label: cor-temporal-dist
-#| asis: true
 cor_by_geo <- epi_cor(df_inter, candidate, guiding,
     cor_by = geo_value, method = "spearman"
 )
@@ -1295,13 +1307,20 @@ if (n_inter_locations > 1) {
         ) +
         scale_x_continuous(breaks = breaks_pretty()) +
         labs(
-            subtitle = bquote(Median ~ Spearman ~ (rho) == .(sprintf("%.3f", med_rho)) ~ "across" ~ .(nrow(cor_by_geo)) ~ "locations"),
+            subtitle = bquote("Median Spearman" ~ rho == .(sprintf("%.3f", med_rho)) ~ "across" ~ .(nrow(cor_by_geo)) ~ "locations"),
             x = expression(Spearman ~ rho), y = "Count"
         )
 
     p_rho + labs(title = "Distribution of intra-location temporal correlations")
-} else {
-    cat(sprintf("For the single location %s, the temporal Spearman correlation is %.3f\n", unique(df_inter$geo_value)[1], med_rho))
+} 
+```
+
+```{r}
+#| label: cor-temporal-mess
+#| output: asis
+
+if (!(n_inter_locations > 1)) {
+    cat(sprintf("For the single location %s, the temporal Spearman correlation is **%.3f**\n", unique(df_inter$geo_value)[1], med_rho))
 }
 ```
 
@@ -1409,6 +1428,7 @@ ggplot(cor_lagged_realtime, aes(x = version, y = cor, color = lag)) +
     guides(color = guide_legend(nrow = 1, override.aes = list(linewidth = 1.5, alpha = 1)))
 ```
 
+::: 
 
 ::: {.content-visible when-meta="multi_location"}
 
@@ -1451,6 +1471,7 @@ In this section, we sweep through a wider range of lags (from `r min(lags_sweep)
 
 ```{r}
 #| label: cor-lag-message
+#| output: asis
 if (n_inter_locations > 1) {
     cat("The plot displays summary statistics like the mean, median, and interquartile range of the temporal correlations across all locations, calculated for every possible lag in the window. A vertical line marks the optimal lag, which has the highest mean correlation.\n\n")
 } else {
@@ -1524,7 +1545,7 @@ if (n_inter_locations > 1) {
 ```{r}
 #| label: cor-choropleth-text
 #| echo: false
-#| results: asis
+#| output: asis
 if (n_inter_locations > 1 && params$geo_type %in% c("state", "county")) {
     cor_optimal_test <- epi_cor(df_inter, candidate, guiding,
         cor_by = geo_value, dt1 = -optimal_lag,
@@ -1597,12 +1618,12 @@ DT::datatable(cor_top,
 if (n_inter_locations > 1) {
     findings <- tibble(
         Metric = c(
-            "Mean geographic rank correlation (ρ)",
+            "Mean daily spatial correlation (across locations)",
             sprintf("Optimal lead time (%s)", time_unit),
-            "Mean ρ at optimal lag",
-            "Median per-location ρ (lag 0)",
-            "Median per-location ρ (optimal lag)",
-            "Locations with |ρ| > 0.5 (optimal lag)"
+            "Mean temporal correlation (at optimal lag)",
+            "Median temporal correlation (lag 0)",
+            "Median temporal correlation (optimal lag)",
+            "Locations with |temporal ρ| > 0.5 (optimal lag)"
         ),
         Value = c(
             sprintf("%.3f", mean_rho),
@@ -1623,14 +1644,12 @@ if (n_inter_locations > 1) {
         Metric = c(
             "Temporal rank correlation (ρ)",
             sprintf("Optimal lead time (%s)", time_unit),
-            "Temporal ρ at optimal lag",
-            "Temporal ρ (lag 0)"
+            "Temporal ρ at optimal lag"
         ),
         Value = c(
             sprintf("%.3f", med_rho),
             as.character(optimal_lag),
-            sprintf("%.3f", max(lag_summary$mean_cor)),
-            sprintf("%.3f", med_rho)
+            sprintf("%.3f", max(lag_summary$mean_cor))
         )
     )
 }

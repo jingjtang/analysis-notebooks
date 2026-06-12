@@ -1,6 +1,6 @@
-# Rapid SCAN (Tentative Name)
+# Delphi RAT-SCAN
 
-This repository (tentatively called Rapid SCAN, where SCAN stands for Surveillance Comparison and iNformation) contains parameterizable notebooks for analyzing and tracking epidemiological indicators in the Delphi data pipeline. 
+This repository contains the Delphi RAT-SCAN (Rapid Assessment Tool for Signal Correlation and iNformation), a set of parameterizable notebooks for analyzing and tracking epidemiological indicators in the Delphi data pipeline. 
 
 ## Existing Notebooks
 
