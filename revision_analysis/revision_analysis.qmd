@@ -70,6 +70,8 @@ if (!exists("params")) {
 }
 
 # Load libraries
+if (!require("pak")) install.packages("pak")
+if (!requireNamespace("epiprocess", quietly = TRUE)) pak::pkg_install("cmu-delphi/epiprocess@dev")
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
     epidatr, epiprocess, covidcast,
