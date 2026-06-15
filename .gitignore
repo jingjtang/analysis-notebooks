@@ -39,8 +39,9 @@ _site
 # indicator_analysis
 indicator_analysis/indicator_evaluation_cache/
 indicator_analysis/indicator_evaluation_files/
-indicator_analysis/indicator_comparison_cache/
-indicator_analysis/indicator_comparison_files/
+indicator_analysis/indicator_correlation_cache/
+indicator_analysis/indicator_correlation_files/
+indicator_analysis/eval_*
 indicator_analysis/data/
 indicator_analysis/epidatr_cache/
 indicator_analysis/nrevss/
