@@ -4,8 +4,9 @@ This repository contains the Delphi RAT-SCAN (Rapid Assessment Tool for Signal C
 
 ## Existing Notebooks
 
-*   [`indicator_analysis/indicator_evaluation.qmd`](indicator_analysis/indicator_evaluation.qmd). A notebook designed to evaluate a candidate indicator against a guiding indicator.
-*   [`revision_analysis/revision_analysis.qmd`](revision_analysis/revision_analysis.qmd). A notebook for tracking indicator revisions over time to analyze their stabilization properties. It tracks how quickly initial daily/weekly estimates converge to their final values over time.
+*   [`indicator_analysis/indicator_evaluation.qmd`](indicator_analysis/indicator_evaluation.qmd). A notebook that performs candidate-only exploratory data analysis (EDA) to understand signal characteristics, coverage, missingness, and versioning/revision behavior.
+*   [`indicator_analysis/indicator_correlation.qmd`](indicator_analysis/indicator_correlation.qmd). A notebook that evaluates a candidate indicator against a guiding indicator (presumed ground truth) to assess its nowcasting/forecasting value via EDA overlays and correlation/lag analyses.
+*   [`revision_analysis/revision_analysis.qmd`](revision_analysis/revision_analysis.qmd). A notebook that tracks versioned time series revisions to determine how long, on average, a series continues to receive revisions after its first publication.
 
 ## Generating and Publishing Examples
 

@@ -1,0 +1,31 @@
+---
+title: "Doctor Visits (HHS) Indicator Analysis"
+subtitle: "Exploratory data analysis of Doctor Visits and comparative evaluation against HHS Hospital Admissions at the state level."
+toc: false
+---
+
+This page provides access to the exploratory data analysis and comparative evaluation reports for doctor visits indicators.
+
+::: {.grid}
+
+::: {.g-col-6}
+### <i class="bi bi-graph-up"></i> Candidate EDA
+
+Evaluation of the **Doctor Visits: Smoothed Adj CLI** signal.
+
+- [<i class="bi bi-file-earmark-bar-graph"></i> View Candidate EDA Report](eval_doctor_visits_smoothed_adj_cli_api_state.html)
+  
+  Exploratory analysis of the candidate indicator's spatial and temporal coverage, missingness, and data distributions across US states.
+:::
+
+::: {.g-col-6}
+### <i class="bi bi-intersect"></i> HHS Comparison
+
+Comparison against the **COVID Hospital Admissions (HHS)** guiding indicator.
+
+- [<i class="bi bi-file-earmark-diff"></i> View HHS Comparison Report](comp_hhs_vs_doctor_visits_api_state.html)
+  
+  Detailed comparative analysis assessing correlations, lead/lag relationships, and back-revision behavior against HHS admissions data.
+:::
+
+:::
