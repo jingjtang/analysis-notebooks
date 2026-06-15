@@ -1,5 +1,5 @@
 ---
-title: "Indicator Comparison: `r params$candidate_name` vs `r params$guiding_name`"
+title: "Indicator Comparison: `r c(params$candidate_name, params$candidate_indicator, 'Candidate')[1]` vs `r c(params$guiding_name, params$guiding_indicator, 'Guiding')[1]`"
 author: "Delphi Group"
 date: today
 format:
@@ -13,21 +13,21 @@ params:
   # Guiding Indicator
   guiding_source:
   guiding_indicator:
-  guiding_name:   
+  guiding_name:
   guiding_csv: !expr "NULL"
   # Candidate Indicator
   candidate_source:
   candidate_indicator:
-  candidate_name: 
+  candidate_name:
   candidate_csv: !expr "NULL"
   # Shared settings
   geo_type:
   time_type:
   start_day:
   end_day:
-  # Maximum locations to show in plots/tables
   max_locations_plot: 60
   max_archive_locs: 60
+  min_archive_days: 60
 knitr:
   opts_chunk:
     comment: "#>"
@@ -62,13 +62,90 @@ if (!exists("params")) {
         candidate_csv = NULL,
         # Shared settings,
         geo_type = "state",
-        time_type = "week",
-        start_day = "2022-01-01",
-        end_day = "2025-12-31",
+        time_type = NULL,
+        end_day = format(Sys.Date()),
+        start_day = format(Sys.Date() - 365 * 2),
         max_locations_plot = 6,
-        max_archive_locs = 60
+        max_archive_locs = 60,
+        min_archive_days = 60
     )
 }
+
+# Runtime defaults for dynamic params. Unlock to allow modification.
+if (exists("params", envir = .GlobalEnv, inherits = FALSE) &&
+    bindingIsLocked("params", .GlobalEnv)) {
+    unlockBinding("params", .GlobalEnv)
+}
+# Helper to flatten parameter lists (e.g. when Quarto CLI parses colons as nested lists)
+flatten_param <- function(x) {
+    if (is.null(x)) return(NULL)
+    if (is.list(x)) {
+        if (!is.null(names(x)) && any(nzchar(names(x)))) {
+            paste(names(x), unlist(x), sep = ": ")
+        } else {
+            as.character(unlist(x))
+        }
+    } else {
+        as.character(x)
+    }
+}
+params$guiding_source    <- flatten_param(params$guiding_source)
+params$guiding_indicator <- flatten_param(params$guiding_indicator)
+params$guiding_name      <- flatten_param(params$guiding_name)
+params$candidate_source  <- flatten_param(params$candidate_source)
+params$candidate_indicator <- flatten_param(params$candidate_indicator)
+params$candidate_name    <- flatten_param(params$candidate_name)
+params$geo_type          <- flatten_param(params$geo_type)
+params$time_type         <- flatten_param(params$time_type)
+params$guiding_csv       <- flatten_param(params$guiding_csv)
+params$candidate_csv     <- flatten_param(params$candidate_csv)
+
+# Helper to resolve relative file paths across render working directories
+resolve_path <- function(path) {
+    if (is.null(path) || !nzchar(path)) return(path)
+    if (file.exists(path)) return(path)
+    cur_dir <- basename(getwd())
+    prefix <- paste0("^", cur_dir, "/")
+    if (grepl(prefix, path)) {
+        stripped_path <- sub(prefix, "", path)
+        if (file.exists(stripped_path)) {
+            return(stripped_path)
+        }
+    }
+    parent_path <- file.path("..", path)
+    if (file.exists(parent_path)) {
+        return(parent_path)
+    }
+    return(path)
+}
+params$guiding_csv   <- resolve_path(params$guiding_csv)
+params$candidate_csv <- resolve_path(params$candidate_csv)
+
+if (!is.null(params$guiding_csv) && nzchar(params$guiding_csv)) {
+    if (!file.exists(params$guiding_csv)) {
+        stop(sprintf("Local guiding CSV file not found at path: %s", params$guiding_csv))
+    }
+}
+if (!is.null(params$candidate_csv) && nzchar(params$candidate_csv)) {
+    if (!file.exists(params$candidate_csv)) {
+        stop(sprintf("Local candidate CSV file not found at path: %s", params$candidate_csv))
+    }
+}
+
+# When using CSV route, source/indicator labels default to the CSV filename
+if (!is.null(params$guiding_csv) &&
+    (is.null(params$guiding_source) || !nzchar(params$guiding_source)))    params$guiding_source <- tools::file_path_sans_ext(basename(params$guiding_csv))
+if (!is.null(params$guiding_csv) &&
+    (is.null(params$guiding_indicator) || !nzchar(params$guiding_indicator))) params$guiding_indicator <- params$guiding_source
+if (!is.null(params$candidate_csv) &&
+    (is.null(params$candidate_source) || !nzchar(params$candidate_source)))    params$candidate_source <- tools::file_path_sans_ext(basename(params$candidate_csv))
+if (!is.null(params$candidate_csv) &&
+    (is.null(params$candidate_indicator) || !nzchar(params$candidate_indicator))) params$candidate_indicator <- params$candidate_source
+# Name defaults
+if (is.null(params$guiding_name) || !nzchar(params$guiding_name)) params$guiding_name <- params$guiding_indicator
+if (is.null(params$candidate_name) || !nzchar(params$candidate_name)) params$candidate_name <- params$candidate_indicator
+if (is.null(params$end_day) || !nzchar(params$end_day)) params$end_day <- format(Sys.Date())
+if (is.null(params$start_day) || !nzchar(params$start_day)) params$start_day <- format(as.Date(params$end_day) - 365 * 2)
 
 # Load libraries
 if (!require("pak")) install.packages("pak")
@@ -79,6 +156,29 @@ pacman::p_load(
     tidyverse, scales, patchwork,
     here, glue, ggtext
 )
+
+# Resolve geo_type parameter (infer if not provided)
+if (is.null(params$geo_type) || !nzchar(params$geo_type)) {
+    if (!is.null(params$guiding_csv) && file.exists(params$guiding_csv)) {
+        tryCatch({
+            sample_df <- readr::read_csv(params$guiding_csv, n_max = 5, show_col_types = FALSE) %>%
+                epiprocess::as_epi_df()
+            params$geo_type <- attributes(sample_df)$metadata$geo_type
+        }, error = function(e) {
+            params$geo_type <- "state"
+        })
+    } else if (!is.null(params$candidate_csv) && file.exists(params$candidate_csv)) {
+        tryCatch({
+            sample_df <- readr::read_csv(params$candidate_csv, n_max = 5, show_col_types = FALSE) %>%
+                epiprocess::as_epi_df()
+            params$geo_type <- attributes(sample_df)$metadata$geo_type
+        }, error = function(e) {
+            params$geo_type <- "state"
+        })
+    } else {
+        stop("Parameter 'geo_type' is required when querying datasets from the API.")
+    }
+}
 # Custom HTML-friendly label wrapper for ggtext::element_markdown
 label_wrap_html <- function(width = 25) {
   fun <- label_wrap_gen(width = width)
@@ -95,8 +195,8 @@ label_wrap_html <- function(width = 25) {
   }
 }
 
-# Invalidate knitr cache when params change
-knitr::opts_chunk$set(cache.extra = list(params))
+# Invalidate knitr cache when params change (commented out to prevent htmlwidgets options error)
+# knitr::opts_chunk$set(cache.extra = list(params))
 
 # Set theme and colors
 colours <- c(
@@ -240,10 +340,13 @@ config_tbl <- tibble(
     Label = c(params$guiding_name, params$candidate_name)
 )
 
-DT::datatable(config_tbl, caption = sprintf(
-    "Geo-level: %s · Period: %s to %s",
-    params$geo_type, params$start_day, params$end_day
-), rownames = FALSE, options = list(scrollX = TRUE, dom = "t"))
+caption_str <- if (is.null(params$geo_type) || !nzchar(params$geo_type)) {
+    sprintf("Period: %s to %s", params$start_day, params$end_day)
+} else {
+    sprintf("Geo-level: %s | Period: %s to %s", params$geo_type, params$start_day, params$end_day)
+}
+
+DT::datatable(config_tbl, caption = caption_str, rownames = FALSE, options = list(scrollX = TRUE, dom = "t"))
 ```
 
 
@@ -401,6 +504,21 @@ cat(sprintf(
     "- **Summary**: %s rows across %s locations\n",
     label_comma()(nrow(df_candidate)), label_comma()(n_distinct(df_candidate$geo_value))
 ))
+
+# Infer time type and geo type from guiding (defaults/overrides resolved here before archive query)
+env_time_type <- attributes(df_guiding)$metadata$time_type
+if (is.null(env_time_type) || length(env_time_type) != 1 || is.na(env_time_type) || !is.character(env_time_type)) {
+    env_time_type <- params$time_type
+}
+if (is.null(env_time_type) || !nzchar(env_time_type)) {
+    env_time_type <- "day"
+}
+params$time_type <- env_time_type
+
+env_geo_type <- attributes(df_guiding)$metadata$geo_type
+if (is.null(params$geo_type) || length(params$geo_type) != 1 || is.na(params$geo_type) || !is.character(params$geo_type)) {
+    params$geo_type <- env_geo_type
+}
 ```
 
 ```{r}
@@ -488,11 +606,8 @@ if (is.null(candidate_archive) && is.null(params$candidate_csv)) {
 ```{r}
 #| label: combine-data
 #| output: asis
-# Infer time type from guiding
-env_time_type <- attributes(df_guiding)$metadata$time_type
-if (is.null(env_time_type) || length(env_time_type) != 1 || is.na(env_time_type) || !is.character(env_time_type)) {
-    env_time_type <- params$time_type
-}
+# Retrieve time_type (already resolved in load-candidate chunk)
+env_time_type <- params$time_type
 
 # When time_type is weekly, align all dates to Sundays and aggregate
 if (env_time_type == "week") {
@@ -1095,7 +1210,7 @@ if (!is.null(candidate_archive) &&
         max(archive$DT$version) - min(archive$DT$version),
         units = "days"
     )
-    archive_has_history <- archive_span_days >= 60
+    archive_has_history <- archive_span_days >= params$min_archive_days
 }
 ```
 
