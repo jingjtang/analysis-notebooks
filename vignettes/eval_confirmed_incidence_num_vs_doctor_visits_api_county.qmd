@@ -1,0 +1,31 @@
+---
+title: "Doctor Visits (County) Indicator Analysis"
+subtitle: "Exploratory data analysis of Doctor Visits and comparative evaluation against JHU COVID-19 cases at the county level."
+toc: false
+---
+
+This page provides access to the exploratory data analysis and comparative evaluation reports for doctor visits indicators.
+
+::: {.grid}
+
+::: {.g-col-6}
+### <i class="bi bi-graph-up"></i> Candidate EDA
+
+Evaluation of the **Doctor Visits: Smoothed Adj CLI** signal.
+
+- [<i class="bi bi-file-earmark-bar-graph"></i> View Candidate EDA Report](eval_doctor_visits_smoothed_adj_cli_api_county.html)
+  
+  Exploratory analysis of the candidate indicator's spatial and temporal coverage, missingness, and data distributions across US counties.
+:::
+
+::: {.g-col-6}
+### <i class="bi bi-intersect"></i> County Comparison
+
+Comparison against the **JHU COVID-19 Cases** guiding indicator.
+
+- [<i class="bi bi-file-earmark-diff"></i> View JHU Cases Comparison Report](eval_jhu_csse_vs_doctor_visits_api_county.html)
+  
+  Detailed comparative analysis assessing correlations, lead/lag relationships, and back-revision behavior against JHU Cases data.
+:::
+
+:::

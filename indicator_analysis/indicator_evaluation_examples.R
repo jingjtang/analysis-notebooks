@@ -5,7 +5,7 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(vroom, dplyr, readr, stringr, fs, quarto, here, rlang)
 
 eval_qmd_path <- here::here("indicator_analysis/indicator_evaluation.qmd")
-comp_qmd_path <- here::here("indicator_analysis/indicator_comparison.qmd")
+comp_qmd_path <- here::here("indicator_analysis/indicator_correlation.qmd")
 
 # Helper to generate descriptive comparison output names
 get_comp_output_name <- function(params, suffix = "") {

@@ -40,14 +40,13 @@ quarto::quarto_render(
 | `source`                | COVIDcast data source                                             | *None (Required)*                                    |
 | `signal`                | Signal name                                                       | *None (Required)*                                    |
 | `signal_name`           | Human-readable label                                              | *None (Required)*                                    |
-| `input`                 | Path to local data (CSV, Parquet, or Directory). `NULL` = use API | `NULL`                                               |
+| `input_dir`             | Path to local data (CSV, Parquet, or Directory). `NULL` = use API | `NULL`                                               |
 | `geo_type`              | Geographic level (`state`, `county`, `hhs`, …)                    | *None (Required)*                                    |
 | `time_type`             | Time resolution (`day`, `week`)                                   | *None (Required)*                                    |
 | `start_day`             | Start of the time_value range (YYYY-MM-DD)                        | *None (Required)*                                    |
 | `end_day`               | End of the time_value range (YYYY-MM-DD)                          | *None (Required)*                                    |
 | `max_locations_plot`    | Max locations in faceted plots                                    | `6`                                                  |
 | `max_locations_table`   | Rows per page in summary tables                                   | `15`                                                 |
-| `quick_revision`        | Days threshold used in `revision_analysis()` print summary        | `7`                                                  |
 | `n_worst`               | Number of worst-behaving locations to highlight in fan plots      | `18`                                                 |
 | `convergence_threshold` | Relative tolerance for "converged" (fraction)                     | `0.05`                                               |
 
@@ -61,7 +60,7 @@ Rscript revision_analysis_examples.R
 
 ## Running on local data
 
-Provide a path to a single CSV, a Parquet file, or a directory of Parquet files (Arrow Dataset) and point `input` at it.
+Provide a path to a single CSV, a Parquet file, or a directory of Parquet files (Arrow Dataset) and point `input_dir` at it.
 
 ### Required CSV schema
 
@@ -80,7 +79,7 @@ Provide a path to a single CSV, a Parquet file, or a directory of Parquet files 
 quarto::quarto_render(
   "revision_analysis.qmd",
   execute_params = list(
-    input       = "revision_analysis/data/revisions/",
+    input_dir   = "revision_analysis/data/revisions/",
     signal_name = "My Custom Signal",
     ...
   )
@@ -89,7 +88,7 @@ quarto::quarto_render(
 
 ```bash
 quarto render revision_analysis.qmd \
-  -P input:revision_analysis/data/revisions/ \
+  -P input_dir:revision_analysis/data/revisions/ \
   -P signal_name:"My Custom Signal" \
   ...
 ```

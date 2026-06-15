@@ -1,5 +1,5 @@
 ---
-title: "Indicator Exploratory Analysis: `r paste(if (!is.null(params$name)) params$name else params$signal, collapse = ' | ')`"
+title: "Indicator Exploratory Analysis: `r paste(if (!is.null(params$name)) params$name else params$signal, collapse = ', ')`"
 author: "Delphi Group"
 date: today
 format:
@@ -23,6 +23,7 @@ params:
   # Maximum locations to show in plots/tables
   max_locations_plot: 60
   max_archive_locs: 60
+  min_archive_days: 60  # Minimum days of version history to enable revision analysis
 knitr:
   opts_chunk:
     comment: "#>"
@@ -50,15 +51,76 @@ if (!exists("params")) {
         signal = "epic_pct_covid_total",
         name = "PopHive: Epic % COVID Total",
         input_csv = NULL,
-        # Shared settings,
         geo_type = "state",
-        time_type = "week",
-        start_day = "2022-01-01",
-        end_day = "2025-12-31",
+        time_type = NULL,
+        end_day = format(Sys.Date()),
+        start_day = format(Sys.Date() - 365 * 2),
         max_locations_plot = 60,
-        max_archive_locs = 60
+        max_archive_locs = 60,
+        min_archive_days = 60
     )
 }
+
+# Runtime defaults for dynamic params. Unlock to allow modification.
+if (exists("params", envir = .GlobalEnv, inherits = FALSE) &&
+    bindingIsLocked("params", .GlobalEnv)) {
+    unlockBinding("params", .GlobalEnv)
+}
+# Helper to flatten parameter lists (e.g. when Quarto CLI parses colons as nested lists)
+flatten_param <- function(x) {
+    if (is.null(x)) return(NULL)
+    if (is.list(x)) {
+        if (!is.null(names(x)) && any(nzchar(names(x)))) {
+            paste(names(x), unlist(x), sep = ": ")
+        } else {
+            as.character(unlist(x))
+        }
+    } else {
+        as.character(x)
+    }
+}
+
+params$source <- flatten_param(params$source)
+params$signal <- flatten_param(params$signal)
+params$name <- flatten_param(params$name)
+params$geo_type <- flatten_param(params$geo_type)
+params$time_type <- flatten_param(params$time_type)
+params$input_csv <- flatten_param(params$input_csv)
+
+# Helper to resolve relative file paths across render working directories
+resolve_path <- function(path) {
+    if (is.null(path) || !nzchar(path)) return(path)
+    if (file.exists(path)) return(path)
+    cur_dir <- basename(getwd())
+    prefix <- paste0("^", cur_dir, "/")
+    if (grepl(prefix, path)) {
+        stripped_path <- sub(prefix, "", path)
+        if (file.exists(stripped_path)) {
+            return(stripped_path)
+        }
+    }
+    parent_path <- file.path("..", path)
+    if (file.exists(parent_path)) {
+        return(parent_path)
+    }
+    return(path)
+}
+params$input_csv <- resolve_path(params$input_csv)
+
+if (!is.null(params$input_csv) && nzchar(params$input_csv)) {
+    if (!file.exists(params$input_csv)) {
+        stop(sprintf("Local CSV file not found at path: %s", params$input_csv))
+    }
+}
+
+# When using CSV route, source/indicator labels default to the CSV filename
+if (!is.null(params$input_csv) &&
+    (is.null(params$source) || !nzchar(params$source))) {
+    params$source <- tools::file_path_sans_ext(basename(params$input_csv))
+}
+
+if (is.null(params$end_day)   || !nzchar(params$end_day))   params$end_day   <- format(Sys.Date())
+if (is.null(params$start_day) || !nzchar(params$start_day)) params$start_day <- format(as.Date(params$end_day) - 365 * 2)
 
 # Load libraries
 if (!require("pak")) install.packages("pak")
@@ -88,21 +150,42 @@ label_wrap_html <- function(width = 25) {
 # Invalidate knitr cache when params change
 knitr::opts_chunk$set(cache.extra = list(params))
 
-# Normalize signal/name params to unique character vectors
-signals_vec  <- unique(as.character(params$signal))
+# Normalize signal/name params to unique character vectors.
+signals_vec <- if (!is.null(params$signal) && length(params$signal) > 0 &&
+    any(nzchar(as.character(params$signal)))) {
+    unique(as.character(params$signal)[nzchar(as.character(params$signal))])
+} else if (!is.null(params$input_csv) && file.exists(params$input_csv)) {
+    # Signal omitted: peek at CSV to resolve signal names early (needed for config table)
+    csv_cols <- readr::read_csv(params$input_csv, n_max = 0, show_col_types = FALSE)
+    if ("signal" %in% colnames(csv_cols)) {
+        sort(unique(readr::read_csv(params$input_csv, col_select = "signal", show_col_types = FALSE)$signal))
+    } else {
+        "value"
+    }
+} else {
+    character(0)
+}
 multi_signal <- length(signals_vec) > 1
 
-# Build signal label 
+# Build signal labels (name falls back to signal if not provided)
 name_vec <- {
     n <- params$name
     if (!is.null(n) && length(n) == length(signals_vec)) as.character(n)
     else signals_vec
 }
-
-# Wrap long names
 name_vec <- str_wrap(name_vec, width = 15)
-
 signal_labels <- setNames(name_vec, signals_vec)
+
+# Resolve geo_type parameter (infer if not provided)
+if (is.null(params$geo_type) || !nzchar(params$geo_type)) {
+    if (!is.null(params$input_csv) && file.exists(params$input_csv)) {
+        sample_df <- readr::read_csv(params$input_csv, n_max = 5, show_col_types = FALSE) %>%
+                epiprocess::as_epi_df()
+        params$geo_type <- attributes(sample_df)$metadata$geo_type
+    } else {
+        stop("Parameter 'geo_type' is required when querying datasets from the API.")
+    }
+}
 
 # Set theme and colors
 colours <- c(
@@ -243,10 +326,11 @@ config_tbl <- tibble(
         params$source,
         paste(signals_vec, collapse = ", "),
         paste(str_remove(name_vec, "\\n"), collapse = ", "),
-        params$geo_type,
+        if (is.null(params$geo_type) || !nzchar(params$geo_type)) NA_character_ else params$geo_type,
         paste(params$start_day, "to", params$end_day)
     )
-)
+) %>%
+    filter(!is.na(Value))
 
 DT::datatable(
     config_tbl,
@@ -269,6 +353,11 @@ if (!is.null(params$input_csv)) {
     df_candidate_raw <- read.csv(params$input_csv) %>%
         mutate(time_value = as.Date(time_value)) %>%
         filter(time_value >= as.Date(params$start_day) & time_value <= as.Date(params$end_day))
+
+    # Add signal column if missing (required for long signal format)
+    if (!("signal" %in% colnames(df_candidate_raw))) {
+        df_candidate_raw$signal <- if (length(signals_vec) > 0) signals_vec[1] else "value"
+    }
 
     # CSV may include version/issue columns for revision analysis
     has_versions <- any(c("version", "issue") %in% colnames(df_candidate_raw))
@@ -445,6 +534,15 @@ if (is.null(candidate_archive) && is.null(params$input_csv)) {
 env_time_type <- attributes(df_candidate)$metadata$time_type
 if (is.null(env_time_type) || length(env_time_type) != 1 || is.na(env_time_type) || !is.character(env_time_type)) {
     env_time_type <- params$time_type
+}
+if (is.null(env_time_type) || !nzchar(env_time_type)) {
+    env_time_type <- "day"
+}
+params$time_type <- env_time_type
+
+env_geo_type <- attributes(df_candidate)$metadata$geo_type
+if (is.null(params$geo_type) || length(params$geo_type) != 1 || is.na(params$geo_type) || !is.character(params$geo_type)) {
+    params$geo_type <- env_geo_type
 }
 
 n_locations <- n_distinct(df_candidate$geo_value)
@@ -871,7 +969,7 @@ if (!is.null(candidate_archive) &&
         max(archive$DT$version) - min(archive$DT$version),
         units = "days"
     )
-    archive_has_history <- archive_span_days >= 60
+    archive_has_history <- archive_span_days >= params$min_archive_days
 }
 ```
 
