@@ -57,7 +57,7 @@ if (!exists("params")) {
         source                = "hospital-admissions",
         signal                = "smoothed_covid19_from_claims",
         signal_name           = "Hospital Admissions: Smoothed COVID-19 from Claims",
-        input                 = "revision_analysis/data/revisions/",
+        input_dir             = "revision_analysis/data/revisions/",
         geo_type              = "state",
         time_type             = "day",
         start_day             = "2023-01-01",
