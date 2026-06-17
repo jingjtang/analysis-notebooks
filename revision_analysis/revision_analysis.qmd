@@ -102,7 +102,7 @@ colours <- c(
 dis_pal <- colours[c(3, 5, 7, 10, 11, 9)]
 
 theme_set(
-    theme_minimal(base_family = "Lato", base_size = 12) +
+    theme_minimal(base_size = 13) +
         theme(
             plot.title = element_text(hjust = 0.5, size = 15, face = "bold"),
             plot.subtitle = element_text(hjust = 0.5, color = "gray50"),
