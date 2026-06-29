@@ -2,8 +2,18 @@ project:
   type: website
   lib-dir: site_libs
   pre-render: scripts/pre_render.R
+  post-render: scripts/post_render.R
   render:
     - index.qmd
+    - vignettes/eval_hhs_vs_doctor_visits_api_state.qmd
+    - vignettes/eval_confirmed_incidence_num_vs_doctor_visits_api_county.qmd
+  resources:
+    - "indicator_analysis/comp_hhs_vs_doctor_visits_api_state.html"
+    - "indicator_analysis/eval_doctor_visits_smoothed_adj_cli_api_state.html"
+    - "indicator_analysis/eval_jhu_csse_vs_doctor_visits_api_county.html"
+    - "indicator_analysis/eval_doctor_visits_smoothed_adj_cli_api_county.html"
+    - "revision_analysis/revision_hospital_admissions_smoothed_covid19_from_claims_api_state.html"
+    - "dataset_comparison/dataset_comparison_dv.html"
 
 execute:
   freeze: false
@@ -11,15 +21,13 @@ execute:
 editor: source
 
 website:
-  title: "Rapid SCAN (Tentative)"
+  title: "RAT SCAN"
   navbar:
     pinned: false
-    title: "<i class='bi bi-journal-text'></i> Rapid SCAN (Tentative)"
+    title: "<i class='bi bi-journal-text'></i> RAT SCAN"
     right:
       - text: Indicators
         menu:
-          - text: "County: JHU COVID-19 Cases vs Dr. Visits"
-            href: indicator_analysis/eval_jhu_csse_vs_doctor_visits_api_county.html
           - text: "County: Dr. Visits"
             href: indicator_analysis/eval_confirmed_incidence_num_vs_doctor_visits_api_county.html
           - text: "State: HHS vs Dr. Visits"

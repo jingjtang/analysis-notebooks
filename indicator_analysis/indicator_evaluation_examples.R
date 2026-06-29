@@ -5,7 +5,7 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(vroom, dplyr, readr, stringr, fs, quarto, here, rlang)
 
 eval_qmd_path <- here::here("indicator_analysis/indicator_evaluation.qmd")
-comp_qmd_path <- here::here("indicator_analysis/indicator_comparison.qmd")
+comp_qmd_path <- here::here("indicator_analysis/indicator_correlation.qmd")
 
 # Helper to generate descriptive comparison output names
 get_comp_output_name <- function(params, suffix = "") {
@@ -286,4 +286,24 @@ quarto::quarto_render(
   input = comp_qmd_path,
   output_file = get_comp_output_name(comp_params_6, "_api_nssp"),
   execute_params = comp_params_6
+)
+
+
+# NWSS: COVID-19 + Influenza wastewater concentration — state, weekly
+eval_params_nwss_multi <- list(
+    source = "nssp",
+    signal = c("pct_ed_visits_covid", "pct_ed_visits_influenza"),
+    name = c("COVID-19 % ED", "Flu % ED"),
+    geo_type= "state",
+    time_type = "week",
+    start_day = "2022-01-01",
+    end_day = "2025-12-31",
+    max_locations_plot = 60,
+    max_archive_locs = 60
+)
+
+quarto::quarto_render(
+    input = eval_qmd_path,
+    output_file = "eval_nssp_covid_flu_state.html",
+    execute_params = eval_params_nwss_multi
 )

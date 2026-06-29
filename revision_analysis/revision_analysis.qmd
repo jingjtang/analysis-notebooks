@@ -73,10 +73,9 @@ if (!exists("params")) {
     )
 }
 
-options(repos = c(
-    delphi = "https://cmu-delphi.r-universe.dev",
-    CRAN = "https://cloud.r-project.org"
-))
+# Load libraries
+if (!require("pak")) install.packages("pak")
+if (!requireNamespace("epiprocess", quietly = TRUE)) pak::pkg_install("cmu-delphi/epiprocess@dev")
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
     epidatr, epiprocess, covidcast,
@@ -114,7 +113,7 @@ colours <- c(
 dis_pal <- colours[c(3, 5, 7, 10, 11, 9)]
 
 theme_set(
-    theme_minimal(base_family = "sans", base_size = 13) +
+    theme_minimal(base_size = 13) +
         theme(
             plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
             plot.subtitle = element_text(hjust = 0.5, color = "gray45", size = 12),
